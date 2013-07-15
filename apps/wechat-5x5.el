@@ -52,8 +52,7 @@
                      (match-string 1 question)))
          (doors (if except
                     `((,except ,(intern next-room))
-                      ("q" living-room)
-                      ("Q" living-room)
+                      ("[qQ]" living-room)
                       (t ,(intern repeat-room)))
                   '((t living-room)))))
     (def-room-raw (intern room-name) prompt doors)
