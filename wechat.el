@@ -18,7 +18,7 @@ since the Unix Epoch (January 1 1970 00:00:00 GMT)."
 (defun xml-get-text (xml node)
   (let ((children (first (xml-get-children xml node))))
     (if children
-        (third children))))
+      (third children))))
 
 (defun wechat-input-xml ()
   "Parse the raw post data as XML."
@@ -41,37 +41,40 @@ since the Unix Epoch (January 1 1970 00:00:00 GMT)."
         (current-seconds-string)
         content))
 
-;; Session
+;; Variable Scope
 (defvar *wechat-work-directory* "~/.emacs.d/wechat/"
   "The path to save user session info.")
 
-(defun wechat-session-filename (username)
-  (concat *wechat-work-directory* username))
+;; Session
+(defun wechat-session-file-name (app-name user-name)
+  (let ((dir-name (concat *wechat-work-directory* (format "%s" app-name))))
+    (unless (file-exists-p dir-name)
+      (make-directory dir-name))
+    (concat dir-name (format "/%s" user-name))))
 
-(defun wechat-session-load (username)
-  (let ((filename (wechat-session-filename username)))
-    (if (file-readable-p filename)
-        (car (read-from-string
-              (with-temp-buffer
-                (insert-file-contents filename)
-                (buffer-string))))
+(defun wechat-session-load (app-name user-name)
+  (let ((file-name (wechat-session-file-name app-name user-name)))
+    (if (file-readable-p file-name)
+      (car (read-from-string
+            (with-temp-buffer
+              (insert-file-contents file-name)
+              (buffer-string))))
       (make-hash-table :test 'equal))))
 
-(defun wechat-session-save (username)
-  (with-temp-file (wechat-session-filename username)
+(defun wechat-session-save (app-name user-name)
+  (with-temp-file (wechat-session-file-name app-name user-name)
     (insert (prin1-to-string current-session-table))))
 
-(defmacro wechat-with-session (username &rest body)
-  (declare (indent 1))
-  `(let ((current-session-table (wechat-session-load ,username)))
+(defmacro wechat-with-session (app-name user-name &rest body)
+  (declare (indent 2))
+  `(let ((current-session-table (wechat-session-load ,app-name ,user-name)))
      (unwind-protect
          (progn ,@body)
-       (wechat-session-save ,username))))
+       (wechat-session-save ,app-name ,user-name))))
 
-;;;###autoload
 (defun session (key &optional value)
   (if value
-      (puthash key value current-session-table)
+    (puthash key value current-session-table)
     (gethash key current-session-table)))
 
 ;; Services
@@ -82,16 +85,20 @@ The value is the default entry of an app.")
 (defvar *wechat-rooms* (make-hash-table)
   "Contains defined wechat rooms.")
 
-;;;###autoload
-(defun def-map (url entry)
+(defmacro* def-wechat-app (name &key url entry)
   "Define a new wechat app."
-  (puthash url entry *wechat-apps*))
+  `(puthash ,url (cons ',name ',entry) *wechat-apps*))
+
+(defun wechat-app-name (url)
+  (car (gethash url *wechat-apps*)))
+
+(defun wechat-default-room (url)
+  (cdr (gethash url *wechat-apps*)))
 
 (defun def-room-raw (name prompt doors)
   "Define a new status."
   (puthash name (list prompt doors) *wechat-rooms*))
 
-;;;###autoload
 (defmacro def-room (name prompt &rest doors)
   "Wrap for def-room-raw."
   `(def-room-raw ',name ,prompt ',doors))
@@ -106,24 +113,27 @@ The value is the default entry of an app.")
                       (and (functionp condition)
                            (funcall condition key)))
               (if (functionp next-room)
-                  (funcall next-room key)
+                (funcall next-room key)
                 next-room))))
         (second (gethash room-name *wechat-rooms*))))
 
 (defun wechat-room-prompt (room-name)
   (let ((prompt (first (gethash room-name *wechat-rooms*))))
     (if (functionp prompt)
-        (funcall prompt)
+      (funcall prompt)
       prompt)))
 
 (defun wechat-run (http)
   "Return a service handler by request path."
-  (let* ((xml (wechat-input-xml)))
-    (wechat-with-session (xml-get-text xml 'FromUserName)
+  (let* ((url (elnode-http-pathinfo http))
+         (xml (wechat-input-xml)))
+    (message "======= url: %s" url)
+    (message "======= xml: %s" xml)
+    (wechat-with-session (wechat-app-name url) (xml-get-text xml 'FromUserName)
       (session "room" (if (session "room")
-                          (wechat-enter-room (session "room")
-                                             (xml-get-text xml 'Content))
-                        (gethash (elnode-http-pathinfo http) *wechat-apps*)))
+                        (wechat-enter-room (session "room")
+                                           (xml-get-text xml 'Content))
+                        (wechat-default-room url)))
       (wechat-output-xml xml (wechat-room-prompt (session "room"))))))
 
 ;; Server
@@ -137,19 +147,17 @@ Otherwise, distribute the raw post data to handler."
   (elnode-http-start http 200 '("Content-Type" . "text/html; charset=UTF-8"))
   (elnode-http-return http
     (if (elnode-http-param http "echostr")
-        (elnode-http-param http "echostr")
+      (elnode-http-param http "echostr")
       (wechat-run http))))
 
-;;;###autoload
 (defun wechat-server-start (&optional port)
   "Start HTTP server for Wechat services"
-  (when (integerp port)
+  (if (integerp port)
     (setf *wechat-server-port* port))
   (if (file-exists-p *wechat-work-directory*)
-      (make-directory *wechat-work-directory* t))
+    (make-directory *wechat-work-directory* t))
   (elnode-start #'wechat-server-handler :port *wechat-server-port*))
 
-;;;###autoload
 (defun wechat-server-stop (&optional port)
   "Stop the wechat server."
   (elnode-stop (or port *wechat-server-port*)))
