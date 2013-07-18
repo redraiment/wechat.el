@@ -1,6 +1,6 @@
-;; 定义新的游戏地图
-(def-map "/game/5x5.el"                 ; 对外开放的URL
-  'tutorial-room-0)                     ; 默认的入口
+(def-wechat-app wechat-5x5              ; 应用名字
+  :url "/game/5x5.el"                   ; 对外开放的URL
+  :entry tutorial-room-0)               ; 默认的入口
 
 ;;; 游戏大厅
 (def-room living-room
