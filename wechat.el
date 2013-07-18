@@ -89,9 +89,15 @@ The value is the default entry of an app.")
 (defvar *wechat-rooms* (make-hash-table)
   "Contains defined wechat rooms.")
 
+(defun def-wechat-app-raw (name url entry)
+  (puthash url (cons name entry) *wechat-apps*)
+  (let ((dir-name (format "%s/%s" *wechat-work-directory* name)))
+    (unless (file-exists-p dir-name)
+      (make-directory dir-name t))))
+
 (defmacro* def-wechat-app (name &key url entry)
   "Define a new wechat app."
-  `(puthash ,url (cons ',name ',entry) *wechat-apps*))
+  `(def-wechat-app-raw ',name ,url ',entry))
 
 (defun wechat-app-name (url)
   (car (gethash url *wechat-apps*)))
@@ -156,7 +162,7 @@ Otherwise, distribute the raw post data to handler."
   "Start HTTP server for Wechat services"
   (if (integerp port)
     (setf *wechat-server-port* port))
-  (if (file-exists-p *wechat-work-directory*)
+  (unless (file-exists-p *wechat-work-directory*)
     (make-directory *wechat-work-directory* t))
   (elnode-start #'wechat-server-handler :port *wechat-server-port*))
 
