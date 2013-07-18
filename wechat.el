@@ -41,36 +41,55 @@ since the Unix Epoch (January 1 1970 00:00:00 GMT)."
         (current-seconds-string)
         content))
 
-;; Variable Scope
-(defvar *wechat-work-directory* "~/.emacs.d/wechat/"
-  "The path to save user session info.")
+;; Scope Manage
+(defvar *wechat-work-directory* "~/.emacs.d/wechat"
+  "The path to save runtime variables info.")
 
-;; Session
-(defun wechat-session-file-name (app-name user-name)
-  (let ((dir-name (concat *wechat-work-directory* (format "%s" app-name))))
+(defun wechat-scope-table-name (scope-name)
+  (intern (concat "current-" (symbol-name scope-name) "-table")))
+
+(defun wechat-scope-load (file-name)
+  (if (file-readable-p file-name)
+    (car (read-from-string (with-temp-buffer
+                             (insert-file-contents file-name)
+                             (buffer-string))))
+    (make-hash-table :test 'equal)))
+
+(defun wechat-scope-save (file-name scope-table)
+  (with-temp-file file-name
+    (insert (prin1-to-string scope-table))))
+
+(defmacro wechat-with-scope (scope-name file-name &rest body)
+  (declare (indent 2))
+  (let ((table-name (wechat-scope-table-name scope-name)))
+    `(let ((,table-name (wechat-scope-load ,file-name)))
+       (unwind-protect
+           (progn ,@body)
+         (wechat-scope-save ,file-name ,table-name)))))
+
+;; Application Scope
+(defun wechat-app-scope-file-name (app-name)
+  (let ((dir-name (format "%s/%s" *wechat-work-directory* app-name)))
     (unless (file-exists-p dir-name)
       (make-directory dir-name))
-    (concat dir-name (format "/%s" user-name))))
+    (concat dir-name "/app-scope")))
 
-(defun wechat-session-load (app-name user-name)
-  (let ((file-name (wechat-session-file-name app-name user-name)))
-    (if (file-readable-p file-name)
-      (car (read-from-string
-            (with-temp-buffer
-              (insert-file-contents file-name)
-              (buffer-string))))
-      (make-hash-table :test 'equal))))
+(defun wechat-with-app-scope (app-name &rest body)
+  (wechat-with-scope 'app (wechat-app-file-name app-name user-name)
+    body))
 
-(defun wechat-session-save (app-name user-name)
-  (with-temp-file (wechat-session-file-name app-name user-name)
-    (insert (prin1-to-string current-session-table))))
+(defun wechat-app-scope (key &optional value)
+  (if value
+    (puthash key value current-app-table)
+    (gethash key current-app-table)))
 
-(defmacro wechat-with-session (app-name user-name &rest body)
-  (declare (indent 2))
-  `(let ((current-session-table (wechat-session-load ,app-name ,user-name)))
-     (unwind-protect
-         (progn ,@body)
-       (wechat-session-save ,app-name ,user-name))))
+;; Session Scope
+(defun wechat-session-file-name (app-name user-name)
+  (format "%s/%s/%s" *wechat-work-directory* app-name user-name))
+
+(defun wechat-with-session (app-name user-name &rest body)
+  (wechat-with-scope 'session (wechat-session-file-name app-name user-name)
+    body))
 
 (defun session (key &optional value)
   (if value
