@@ -67,6 +67,19 @@ since the Unix Epoch (January 1 1970 00:00:00 GMT)."
            (progn ,@body)
          (wechat-scope-save ,file-name ,table-name)))))
 
+;; Global Scope
+(defun wechat-global-scope-file-name ()
+  (concat *wechat-work-directory* "/global-scope"))
+
+(defmacro wechat-with-global-scope (&rest body)
+  `(wechat-with-scope global (wechat-global-scope-file-name)
+     ,@body))
+
+(defun wechat-global-scope (key &optional value)
+  (if value
+    (puthash key value current-global-table)
+    (gethash key current-global-table)))
+
 ;; Application Scope
 (defun wechat-app-scope-file-name (app-name)
   (format "%s/%s/app-scope" *wechat-work-directory* app-name))
@@ -152,13 +165,14 @@ The value is the default entry of an app.")
   (let* ((url (elnode-http-pathinfo http))
          (xml (wechat-input-xml))
          (app-name (wechat-app-name url)))
-    (wechat-with-app-scope app-name
-      (wechat-with-session app-name (xml-get-text xml 'FromUserName)
-        (session "room" (if (session "room")
-                          (wechat-enter-room (session "room")
-                                             (xml-get-text xml 'Content))
-                          (wechat-default-room url)))
-        (wechat-output-xml xml (wechat-room-prompt (session "room")))))))
+    (wechat-with-global-scope
+     (wechat-with-app-scope app-name
+       (wechat-with-session app-name (xml-get-text xml 'FromUserName)
+         (session "room" (if (session "room")
+                           (wechat-enter-room (session "room")
+                                              (xml-get-text xml 'Content))
+                           (wechat-default-room url)))
+         (wechat-output-xml xml (wechat-room-prompt (session "room"))))))))
 
 ;; Server
 (defvar *wechat-server-port* 26870
