@@ -194,6 +194,6 @@
               'living-room
             (destructuring-bind (y x) (board-position-parse cmd)
               (when (board-contains-p y x)
-                (board-toggle y x)
+                (board-put y x)
                 (session "step" (1+ (session "step"))))
               'game-room))))))
